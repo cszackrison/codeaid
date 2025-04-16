@@ -18,6 +18,9 @@ type ResponseMsg string
 // CancelMsg is a special message type returned when an operation is canceled
 type CancelMsg struct{}
 
+// Global variable to hold cancellation function
+var currentCancelFunc context.CancelFunc
+
 // ClearHistoryMsg is a message type to indicate history clearing
 type ClearHistoryMsg struct{}
 
@@ -57,6 +60,19 @@ func ClearHistory() tea.Msg {
 	return ClearHistoryMsg{}
 }
 
+// AddMessageToHistory adds an assistant message to the conversation history
+// This is called only after a response is successfully displayed and not canceled
+func AddMessageToHistory(content string) {
+	conversationMux.Lock()
+	defer conversationMux.Unlock()
+	
+	assistantMessage := openai.ChatCompletionMessage{
+		Role:    openai.ChatMessageRoleAssistant,
+		Content: content,
+	}
+	conversationHistory = append(conversationHistory, assistantMessage)
+}
+
 // ProcessUserInput handles user input and checks for commands
 func ProcessUserInput(input string) tea.Cmd {
 	// Check for commands
@@ -69,6 +85,13 @@ func ProcessUserInput(input string) tea.Cmd {
 	return FetchReply(input)
 }
 
+// CancelCurrentRequest cancels any ongoing API request
+func CancelCurrentRequest() {
+	if currentCancelFunc != nil {
+		currentCancelFunc() // Cancel the current context
+	}
+}
+
 // FetchReply creates a tea.Cmd that fetches a reply with guaranteed completion
 func FetchReply(prompt string) tea.Cmd {
 	return func() tea.Msg {
@@ -79,13 +102,19 @@ func FetchReply(prompt string) tea.Cmd {
 		timer := time.NewTimer(15 * time.Second)
 		defer timer.Stop()
 
+		// Create a cancellable context and store its cancel function globally
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		
+		// Store the cancel function so it can be called when user cancels
+		currentCancelFunc = cancel
+
 		// Launch API call in goroutine
 		go func() {
-			client := initClient()
-
-			// Create context with timeout
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			// Make sure to clean up 
 			defer cancel()
+			defer func() { currentCancelFunc = nil }()
+			
+			client := initClient()
 
 			// Add user message to history
 			userMessage := openai.ChatCompletionMessage{
@@ -111,23 +140,21 @@ func FetchReply(prompt string) tea.Cmd {
 				},
 			)
 
-			// Process result or error
-			if err != nil {
-				resultChan <- ResponseMsg("Error: " + err.Error())
-			} else if len(resp.Choices) == 0 {
-				resultChan <- ResponseMsg("Error: No response received from API")
-			} else {
-				// Add assistant's response to history
-				assistantMessage := openai.ChatCompletionMessage{
-					Role:    openai.ChatMessageRoleAssistant,
-					Content: resp.Choices[0].Message.Content,
+			// Check if context was canceled before sending response
+			select {
+			case <-ctx.Done():
+				// Context was canceled, don't send a response
+				return
+			default:
+				// Context not canceled, proceed with normal response
+				if err != nil {
+					resultChan <- ResponseMsg("Error: " + err.Error())
+				} else if len(resp.Choices) == 0 {
+					resultChan <- ResponseMsg("Error: No response received from API")
+				} else {
+					// Send response - it will be added to history after displaying
+					resultChan <- ResponseMsg(resp.Choices[0].Message.Content)
 				}
-				
-				conversationMux.Lock()
-				conversationHistory = append(conversationHistory, assistantMessage)
-				conversationMux.Unlock()
-				
-				resultChan <- ResponseMsg(resp.Choices[0].Message.Content)
 			}
 		}()
 
@@ -138,7 +165,11 @@ func FetchReply(prompt string) tea.Cmd {
 			return result
 		case <-timer.C:
 			// Timeout path
+			cancel() // Make sure to cancel the context on timeout
 			return ResponseMsg("Error: Request timed out after 15 seconds. Please try again.")
+		case <-ctx.Done():
+			// Context was canceled, return CancelMsg
+			return CancelMsg{}
 		}
 	}
 }

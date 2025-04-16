@@ -112,11 +112,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			// Cancel current operation or exit
 			if m.loading {
-				// Stop loading and add a canceled message
+				// Stop loading without adding a response to the conversation
 				m.loading = false
-				m.messages = append(m.messages, Message{Content: "(Canceled by user)", IsUser: true})
-				// Force the UI to refresh
-				return m, tea.Batch()
+				// Cancel the actual API request first
+				utils.CancelCurrentRequest()
+				return m, nil
 			}
 			return m, tea.Quit
 
@@ -127,8 +127,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			// Cancel existing operation if needed
 			if m.loading {
+				// Cancel the actual API request first
+				utils.CancelCurrentRequest()
+				// Set loading to false
 				m.loading = false
-				m.messages = append(m.messages, Message{Content: "(Previous request canceled)", IsUser: true})
+				// Process the new input right away
+				return m, utils.ProcessUserInput(m.input)
 			}
 
 			// Process new user input
@@ -211,7 +215,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle successful response
 		m.messages = append(m.messages, Message{Content: content, IsUser: false})
 		m.loading = false
-		return m, nil
+		// Now that we're displaying the response, update the conversation history
+		return m, func() tea.Msg {
+			// Add message to conversation history after it's displayed
+			utils.AddMessageToHistory(content)
+			return nil
+		}
 
 	case utils.ClearHistoryMsg:
 		// Clear the chat history in the UI
@@ -222,7 +231,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case utils.CancelMsg:
-		// Handle explicit cancellation
+		// The request was canceled via context cancellation
+		// Just set loading to false without adding any message to UI or history
 		m.loading = false
 		return m, nil
 
@@ -317,7 +327,7 @@ func (m model) View() string {
 	}
 
 	// Combine all elements
-	return fmt.Sprintf("%s\n\n%s%s", conversation.String(), prompt)
+	return fmt.Sprintf("%s\n\n%s", conversation.String(), prompt)
 }
 
 func main() {
