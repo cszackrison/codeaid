@@ -8,6 +8,7 @@ import (
 
 	"codeaid/utils"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/glamour"
 	"github.com/charmbracelet/lipgloss"
 )
 
@@ -19,11 +20,12 @@ type Message struct {
 
 // Model represents the application state
 type model struct {
-	input         string
-	messages      []Message
-	loading       bool
-	animationTick int
-	viewport      viewport
+	input           string
+	messages        []Message
+	loading         bool
+	animationTick   int
+	viewport        viewport
+	markdownRenderer *glamour.TermRenderer
 }
 
 // Viewport manages the visible area of the chat
@@ -33,6 +35,14 @@ type viewport struct {
 }
 
 func (m model) Init() tea.Cmd {
+	// Initialize the markdown renderer if not already done
+	if m.markdownRenderer == nil {
+		renderer, _ := glamour.NewTermRenderer(
+			glamour.WithAutoStyle(),
+			glamour.WithWordWrap(100), // Adjust based on typical terminal width
+		)
+		m.markdownRenderer = renderer
+	}
 	return nil
 }
 
@@ -53,6 +63,37 @@ func isControlChar(s string) bool {
 		}
 	}
 
+	return false
+}
+
+// containsMarkdown checks if content likely contains markdown formatting
+func containsMarkdown(content string) bool {
+	// Check for common markdown indicators
+	markdownPatterns := []string{
+		"```", // Code blocks
+		"# ",  // Headers
+		"## ", 
+		"### ", 
+		"* ",  // Lists
+		"- ",
+		"1. ", // Ordered lists
+		"[",   // Links
+		"![",  // Images
+		"**",  // Bold
+		"__",  // Underline
+		"*",   // Italic
+		"_",   // Italic
+		">",   // Blockquotes
+		"|",   // Tables
+		"---", // Horizontal rule
+	}
+
+	for _, pattern := range markdownPatterns {
+		if strings.Contains(content, pattern) {
+			return true
+		}
+	}
+	
 	return false
 }
 
@@ -176,7 +217,18 @@ func (m model) View() string {
 			if strings.HasPrefix(msg.Content, "Error:") {
 				conversation.WriteString(styles.error.Render(msg.Content))
 			} else {
-				conversation.WriteString(styles.ai.Render(msg.Content))
+				// Check if content looks like markdown and render it if it does
+				if containsMarkdown(msg.Content) && m.markdownRenderer != nil {
+					renderedContent, err := m.markdownRenderer.Render(msg.Content)
+					if err == nil {
+						conversation.WriteString(renderedContent)
+					} else {
+						// Fall back to normal render if markdown parsing fails
+						conversation.WriteString(styles.ai.Render(msg.Content))
+					}
+				} else {
+					conversation.WriteString(styles.ai.Render(msg.Content))
+				}
 			}
 		}
 		conversation.WriteString("\n\n")
@@ -206,9 +258,20 @@ func main() {
 	// Clear screen and display logo first
 	utils.DisplayLogo()
 	
+	// Create and initialize the markdown renderer
+	renderer, err := glamour.NewTermRenderer(
+		glamour.WithAutoStyle(),
+		glamour.WithWordWrap(100), // Adjust based on typical terminal width
+	)
+	if err != nil {
+		fmt.Printf("Error initializing markdown renderer: %v\n", err)
+		os.Exit(1)
+	}
+
 	// Create initial model
 	initialModel := model{
 		messages: []Message{},
+		markdownRenderer: renderer,
 	}
 
 	// Create program with alternateScreen option for better performance
