@@ -83,10 +83,11 @@ func ProcessUserInput(input string) tea.Cmd {
 func ExecuteCommand(input string) tea.Cmd {
 	// Extract command name (everything before the first space)
 	cmdName := input
+	// args variable is prepared for future implementation
+	_ = ""
 
 	if idx := strings.Index(input, " "); idx > 0 {
 		cmdName = input[:idx]
-		// We'll use the args when we implement command arguments
 		// args = strings.TrimSpace(input[idx+1:])
 	}
 
@@ -102,7 +103,8 @@ func ExecuteCommand(input string) tea.Cmd {
 				"/clear - Clear conversation history\n" +
 				"/help  - Show this help message\n" +
 				"/exit  - Exit the application"
-			return messages.ResponseMsg(helpText)
+			// Return response that will be displayed but not part of conversation
+			return messages.CommandResponseMsg(helpText)
 		}
 	case "/exit":
 		return tea.Quit

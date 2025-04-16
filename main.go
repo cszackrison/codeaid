@@ -289,6 +289,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			utils.AddMessageToHistory(content)
 			return nil
 		}
+		
+	case messages.CommandResponseMsg:
+		// Handle command response (display only, not added to conversation history)
+		content := string(msg)
+		m.messages = append(m.messages, Message{Content: content, IsUser: false})
+		m.loading = false
+		return m, nil
 
 	case messages.ClearHistoryMsg:
 		// Clear the chat history in the UI
