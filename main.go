@@ -35,14 +35,7 @@ type viewport struct {
 }
 
 func (m model) Init() tea.Cmd {
-	// Initialize the markdown renderer if not already done
-	if m.markdownRenderer == nil {
-		renderer, _ := glamour.NewTermRenderer(
-			glamour.WithAutoStyle(),
-			glamour.WithWordWrap(100), // Adjust based on typical terminal width
-		)
-		m.markdownRenderer = renderer
-	}
+	// No markdown renderer initialization - disabled
 	return nil
 }
 
@@ -187,6 +180,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Handle window resizing
 		m.viewport.width = msg.Width
 		m.viewport.height = msg.Height
+		return m, nil
 	}
 
 	return m, nil
@@ -205,8 +199,8 @@ func (m model) View() string {
 	}{
 		header:  lipgloss.NewStyle().Bold(true),                                 // Bold, default color
 		user:    lipgloss.NewStyle().Bold(true),                                 // Bold, default color
-		ai:      lipgloss.NewStyle(),                                            // Default color
-		error:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true), // Basic red from default palette
+		ai:      lipgloss.NewStyle().Width(m.viewport.width - 2),                // Default color with width constraint
+		error:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Width(m.viewport.width - 2), // Basic red with width constraint
 		loading: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),            // Basic yellow from default palette
 		input:   lipgloss.NewStyle(),                                            // Default color
 		active:  lipgloss.NewStyle().Underline(true),                            // Underlined instead of background color
@@ -225,18 +219,8 @@ func (m model) View() string {
 			if strings.HasPrefix(msg.Content, "Error:") {
 				conversation.WriteString(styles.error.Render(msg.Content))
 			} else {
-				// Check if content looks like markdown and render it if it does
-				if containsMarkdown(msg.Content) && m.markdownRenderer != nil {
-					renderedContent, err := m.markdownRenderer.Render(msg.Content)
-					if err == nil {
-						conversation.WriteString(renderedContent)
-					} else {
-						// Fall back to normal render if markdown parsing fails
-						conversation.WriteString(styles.ai.Render(msg.Content))
-					}
-				} else {
-					conversation.WriteString(styles.ai.Render(msg.Content))
-				}
+				// No markdown rendering - display plain text with wrapping
+				conversation.WriteString(styles.ai.Render(msg.Content))
 			}
 		}
 		conversation.WriteString("\n\n")
@@ -266,20 +250,13 @@ func main() {
 	// Clear screen and display logo first
 	utils.DisplayLogo()
 	
-	// Create and initialize the markdown renderer
-	renderer, err := glamour.NewTermRenderer(
-		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(100), // Adjust based on typical terminal width
-	)
-	if err != nil {
-		fmt.Printf("Error initializing markdown renderer: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create initial model
+	// Create initial model with default window size for proper text wrapping
 	initialModel := model{
 		messages: []Message{},
-		markdownRenderer: renderer,
+		viewport: viewport{
+			width:  80, // Default width, will be updated on first WindowSizeMsg
+			height: 24, // Default height, will be updated on first WindowSizeMsg
+		},
 	}
 
 	// Create program with alternateScreen option for better performance
