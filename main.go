@@ -107,8 +107,9 @@ func containsMarkdown(content string) bool {
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
-		switch msg.String() {
-		case "ctrl+c", "esc":
+		// Use key types for all special keys for better reliability
+		switch msg.Type {
+		case tea.KeyCtrlC, tea.KeyEsc:
 			// Cancel current operation or exit
 			if m.loading {
 				// Stop loading and add a canceled message
@@ -119,7 +120,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 
-		case "enter":
+		case tea.KeyEnter:
 			if m.input == "" {
 				return m, nil
 			}
@@ -143,46 +144,55 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				utils.ProcessUserInput(userInput),
 			)
 
-		case "backspace":
+		case tea.KeyBackspace:
 			if len(m.input) > 0 && m.cursorPosition > 0 {
 				// Remove character before cursor
 				m.input = m.input[:m.cursorPosition-1] + m.input[m.cursorPosition:]
 				m.cursorPosition--
 			}
 			
-		case "delete", "del":
+		case tea.KeyDelete:
 			if len(m.input) > 0 && m.cursorPosition < len(m.input) {
 				// Remove character at cursor
 				m.input = m.input[:m.cursorPosition] + m.input[m.cursorPosition+1:]
 			}
 
-		case "left":
+		case tea.KeyLeft:
 			if m.cursorPosition > 0 {
 				m.cursorPosition--
 			}
 			
-		case "right":
+		case tea.KeyRight:
 			if m.cursorPosition < len(m.input) {
 				m.cursorPosition++
 			}
 			
-		case "home":
+		case tea.KeyHome:
 			m.cursorPosition = 0
 			
-		case "end":
+		case tea.KeyEnd:
 			m.cursorPosition = len(m.input)
 			
-		case "up", "down":
-			// Ignore arrow up/down keys
+		case tea.KeyUp, tea.KeyDown:
+			// Ignore up/down keys
+			
+		case tea.KeySpace:
+			// Handle space key
+			if m.cursorPosition == len(m.input) {
+				m.input += " "
+			} else {
+				m.input = m.input[:m.cursorPosition] + " " + m.input[m.cursorPosition:]
+			}
+			m.cursorPosition++
 			
 		default:
-			// Add typed character if not a control character
-			if !isControlChar(msg.String()) {
-				// Insert at cursor position
+			// For all other keys, check if they're text input
+			if msg.Type == tea.KeyRunes {
+				// Regular character input
 				if m.cursorPosition == len(m.input) {
-					m.input += msg.String()
+					m.input += string(msg.Runes)
 				} else {
-					m.input = m.input[:m.cursorPosition] + msg.String() + m.input[m.cursorPosition:]
+					m.input = m.input[:m.cursorPosition] + string(msg.Runes) + m.input[m.cursorPosition:]
 				}
 				m.cursorPosition++
 			}
