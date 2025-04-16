@@ -129,10 +129,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.input = ""
 
-			// Run loading animation and API call in parallel
+			// Run loading animation and process user input (checking for commands)
 			return m, tea.Batch(
 				utils.TickAnimation(),
-				utils.FetchReply(userInput),
+				utils.ProcessUserInput(userInput),
 			)
 
 		case "backspace":
@@ -159,6 +159,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Handle successful response
 		m.messages = append(m.messages, Message{Content: content, IsUser: false})
+		m.loading = false
+		return m, nil
+
+	case utils.ClearHistoryMsg:
+		// Clear the chat history in the UI
+		m.messages = []Message{
+			{Content: "Chat history has been cleared.", IsUser: false},
+		}
 		m.loading = false
 		return m, nil
 

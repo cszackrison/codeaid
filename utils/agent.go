@@ -3,6 +3,7 @@ package utils
 import (
 	"context"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,12 +18,17 @@ type ResponseMsg string
 // CancelMsg is a special message type returned when an operation is canceled
 type CancelMsg struct{}
 
+// ClearHistoryMsg is a message type to indicate history clearing
+type ClearHistoryMsg struct{}
+
 // Global client and environment setup to avoid repeated initialization
 var (
 	apiClient         *openai.Client
 	apiKey            string
 	clientInitMux     sync.Mutex
 	clientInitialized bool
+	conversationMux   sync.Mutex
+	conversationHistory []openai.ChatCompletionMessage
 )
 
 // Initialize API client once
@@ -42,12 +48,30 @@ func initClient() *openai.Client {
 	return apiClient
 }
 
+// ClearHistory resets the conversation history
+func ClearHistory() tea.Msg {
+	conversationMux.Lock()
+	defer conversationMux.Unlock()
+	
+	conversationHistory = nil
+	return ClearHistoryMsg{}
+}
+
+// ProcessUserInput handles user input and checks for commands
+func ProcessUserInput(input string) tea.Cmd {
+	// Check for commands
+	if strings.TrimSpace(input) == "/clear" {
+		return func() tea.Msg {
+			return ClearHistory()
+		}
+	}
+	
+	return FetchReply(input)
+}
+
 // FetchReply creates a tea.Cmd that fetches a reply with guaranteed completion
 func FetchReply(prompt string) tea.Cmd {
 	return func() tea.Msg {
-		// This is the key change - we don't return nil from this function
-		// Instead we use a timer to ensure we always return a result
-
 		// Create result channel with buffer to avoid blocking
 		resultChan := make(chan tea.Msg, 1)
 
@@ -63,19 +87,27 @@ func FetchReply(prompt string) tea.Cmd {
 			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 
-			// Make API request
+			// Add user message to history
+			userMessage := openai.ChatCompletionMessage{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
+			}
+			
+			// Update conversation history
+			conversationMux.Lock()
+			conversationHistory = append(conversationHistory, userMessage)
+			messages := make([]openai.ChatCompletionMessage, len(conversationHistory))
+			copy(messages, conversationHistory)
+			conversationMux.Unlock()
+
+			// Make API request with full conversation history
 			resp, err := client.CreateChatCompletion(
 				ctx,
 				openai.ChatCompletionRequest{
 					Model:       "mistralai/mistral-small-3.1-24b-instruct:free",
 					MaxTokens:   1024,
 					Temperature: 0.7,
-					Messages: []openai.ChatCompletionMessage{
-						{
-							Role:    openai.ChatMessageRoleUser,
-							Content: prompt,
-						},
-					},
+					Messages:    messages,
 				},
 			)
 
@@ -85,6 +117,16 @@ func FetchReply(prompt string) tea.Cmd {
 			} else if len(resp.Choices) == 0 {
 				resultChan <- ResponseMsg("Error: No response received from API")
 			} else {
+				// Add assistant's response to history
+				assistantMessage := openai.ChatCompletionMessage{
+					Role:    openai.ChatMessageRoleAssistant,
+					Content: resp.Choices[0].Message.Content,
+				}
+				
+				conversationMux.Lock()
+				conversationHistory = append(conversationHistory, assistantMessage)
+				conversationMux.Unlock()
+				
 				resultChan <- ResponseMsg(resp.Choices[0].Message.Content)
 			}
 		}()
