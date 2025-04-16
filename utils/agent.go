@@ -26,11 +26,11 @@ type ClearHistoryMsg struct{}
 
 // Global client and environment setup to avoid repeated initialization
 var (
-	apiClient         *openai.Client
-	apiKey            string
-	clientInitMux     sync.Mutex
-	clientInitialized bool
-	conversationMux   sync.Mutex
+	apiClient           *openai.Client
+	apiKey              string
+	clientInitMux       sync.Mutex
+	clientInitialized   bool
+	conversationMux     sync.Mutex
 	conversationHistory []openai.ChatCompletionMessage
 )
 
@@ -55,7 +55,7 @@ func initClient() *openai.Client {
 func ClearHistory() tea.Msg {
 	conversationMux.Lock()
 	defer conversationMux.Unlock()
-	
+
 	conversationHistory = nil
 	return ClearHistoryMsg{}
 }
@@ -65,7 +65,7 @@ func ClearHistory() tea.Msg {
 func AddMessageToHistory(content string) {
 	conversationMux.Lock()
 	defer conversationMux.Unlock()
-	
+
 	assistantMessage := openai.ChatCompletionMessage{
 		Role:    openai.ChatMessageRoleAssistant,
 		Content: content,
@@ -75,14 +75,27 @@ func AddMessageToHistory(content string) {
 
 // ProcessUserInput handles user input and checks for commands
 func ProcessUserInput(input string) tea.Cmd {
+	trimmedInput := strings.TrimSpace(input)
+
 	// Check for commands
-	if strings.TrimSpace(input) == "/clear" {
+	switch trimmedInput {
+	case "/clear":
 		return func() tea.Msg {
 			return ClearHistory()
 		}
+	case "/help":
+		return func() tea.Msg {
+			helpText := "Available commands:\n" +
+				"/clear - Clear conversation history\n" +
+				"/help  - Show this help message\n" +
+				"/exit  - Exit the application"
+			return ResponseMsg(helpText)
+		}
+	case "/exit":
+		return tea.Quit
+	default:
+		return FetchReply(input)
 	}
-	
-	return FetchReply(input)
 }
 
 // CancelCurrentRequest cancels any ongoing API request
@@ -104,16 +117,16 @@ func FetchReply(prompt string) tea.Cmd {
 
 		// Create a cancellable context and store its cancel function globally
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		
+
 		// Store the cancel function so it can be called when user cancels
 		currentCancelFunc = cancel
 
 		// Launch API call in goroutine
 		go func() {
-			// Make sure to clean up 
+			// Make sure to clean up
 			defer cancel()
 			defer func() { currentCancelFunc = nil }()
-			
+
 			client := initClient()
 
 			// Add user message to history
@@ -121,7 +134,7 @@ func FetchReply(prompt string) tea.Cmd {
 				Role:    openai.ChatMessageRoleUser,
 				Content: prompt,
 			}
-			
+
 			// Update conversation history
 			conversationMux.Lock()
 			conversationHistory = append(conversationHistory, userMessage)

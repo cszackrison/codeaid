@@ -20,13 +20,16 @@ type Message struct {
 
 // Model represents the application state
 type model struct {
-	input           string
-	cursorPosition  int
-	messages        []Message
-	loading         bool
-	animationTick   int
-	viewport        viewport
+	input            string
+	cursorPosition   int
+	messages         []Message
+	loading          bool
+	animationTick    int
+	viewport         viewport
 	markdownRenderer *glamour.TermRenderer
+	hints            []string
+	selectedHint     int
+	showHints        bool
 }
 
 // Viewport manages the visible area of the chat
@@ -53,7 +56,7 @@ func isControlChar(s string) bool {
 			return true
 		}
 	}
-	
+
 	// Check for key combinations
 	if strings.HasPrefix(s, "ctrl+") || strings.HasPrefix(s, "shift+") || strings.HasPrefix(s, "alt+") {
 		return true
@@ -79,9 +82,9 @@ func containsMarkdown(content string) bool {
 	markdownPatterns := []string{
 		"```", // Code blocks
 		"# ",  // Headers
-		"## ", 
-		"### ", 
-		"* ",  // Lists
+		"## ",
+		"### ",
+		"* ", // Lists
 		"- ",
 		"1. ", // Ordered lists
 		"[",   // Links
@@ -100,7 +103,7 @@ func containsMarkdown(content string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -121,6 +124,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 
 		case tea.KeyEnter:
+			// If hints are shown and a hint is selected, use it instead
+			if m.showHints && len(m.hints) > 0 && m.selectedHint >= 0 && m.selectedHint < len(m.hints) {
+				m.input = m.hints[m.selectedHint]
+				m.cursorPosition = len(m.input)
+				m.showHints = false
+				return m, nil
+			}
+
 			if m.input == "" {
 				return m, nil
 			}
@@ -141,6 +152,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.loading = true
 			m.input = ""
 			m.cursorPosition = 0
+			m.showHints = false
 
 			// Run loading animation and process user input (checking for commands)
 			return m, tea.Batch(
@@ -153,33 +165,70 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Remove character before cursor
 				m.input = m.input[:m.cursorPosition-1] + m.input[m.cursorPosition:]
 				m.cursorPosition--
+
+				// Update hints based on new input
+				m.hints = getCommandHints(m.input)
+				if len(m.hints) > 0 {
+					m.showHints = true
+					m.selectedHint = 0
+				} else {
+					m.showHints = false
+				}
 			}
-			
+
 		case tea.KeyDelete:
 			if len(m.input) > 0 && m.cursorPosition < len(m.input) {
 				// Remove character at cursor
 				m.input = m.input[:m.cursorPosition] + m.input[m.cursorPosition+1:]
+
+				// Update hints based on new input
+				m.hints = getCommandHints(m.input)
+				if len(m.hints) > 0 {
+					m.showHints = true
+					m.selectedHint = 0
+				} else {
+					m.showHints = false
+				}
 			}
 
 		case tea.KeyLeft:
 			if m.cursorPosition > 0 {
 				m.cursorPosition--
 			}
-			
+
 		case tea.KeyRight:
 			if m.cursorPosition < len(m.input) {
 				m.cursorPosition++
 			}
-			
+
 		case tea.KeyHome:
 			m.cursorPosition = 0
-			
+
 		case tea.KeyEnd:
 			m.cursorPosition = len(m.input)
-			
-		case tea.KeyUp, tea.KeyDown:
-			// Ignore up/down keys
-			
+
+		case tea.KeyUp:
+			// Handle up key for hint navigation
+			if m.showHints && len(m.hints) > 0 {
+				if m.selectedHint > 0 {
+					m.selectedHint--
+				} else {
+					// Wrap around to the last hint
+					m.selectedHint = len(m.hints) - 1
+				}
+			}
+
+		case tea.KeyDown:
+			// Handle down key for hint navigation
+			if m.showHints && len(m.hints) > 0 {
+				if m.selectedHint < len(m.hints)-1 {
+					m.selectedHint++
+				} else {
+					// Wrap around to the first hint
+					m.selectedHint = 0
+				}
+			}
+
 		case tea.KeySpace:
 			// Handle space key
 			if m.cursorPosition == len(m.input) {
@@ -188,7 +237,16 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input = m.input[:m.cursorPosition] + " " + m.input[m.cursorPosition:]
 			}
 			m.cursorPosition++
-			
+
+		case tea.KeyTab:
+			// Handle tab key for autocomplete
+			if m.showHints && len(m.hints) > 0 && m.selectedHint >= 0 && m.selectedHint < len(m.hints) {
+				// Autocomplete with the selected hint
+				m.input = m.hints[m.selectedHint]
+				m.cursorPosition = len(m.input)
+				m.showHints = false
+			}
+
 		default:
 			// For all other keys, check if they're text input
 			if msg.Type == tea.KeyRunes {
@@ -199,6 +257,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input = m.input[:m.cursorPosition] + string(msg.Runes) + m.input[m.cursorPosition:]
 				}
 				m.cursorPosition++
+
+				// Update hints based on new input
+				m.hints = getCommandHints(m.input)
+				if len(m.hints) > 0 {
+					m.showHints = true
+					m.selectedHint = 0
+				} else {
+					m.showHints = false
+				}
 			}
 		}
 
@@ -301,7 +368,7 @@ func (m model) View() string {
 	// Render input prompt with cursor
 	var prompt string
 	prefix := "> "
-	
+
 	if m.loading {
 		prompt = styles.active.Render(prefix + m.input)
 	} else {
@@ -320,20 +387,73 @@ func (m model) View() string {
 			if m.cursorPosition+1 <= len(m.input) {
 				afterCursor = m.input[m.cursorPosition+1:]
 			}
-			
+
 			cursorStyle := lipgloss.NewStyle().Background(lipgloss.Color("7"))
 			prompt = styles.input.Render(prefix + beforeCursor + cursorStyle.Render(atCursor) + afterCursor)
 		}
 	}
 
+	// Add hints if available
+	var hintsDisplay string
+	if m.showHints && len(m.hints) > 0 {
+		var hintsBuilder strings.Builder
+		hintsBuilder.WriteString("\n")
+
+		for i, hint := range m.hints {
+			if i == m.selectedHint {
+				// Highlight the selected hint
+				hintsBuilder.WriteString(lipgloss.NewStyle().
+					Background(lipgloss.Color("4")).
+					Foreground(lipgloss.Color("0")).
+					Bold(true).
+					Render(" " + hint + " "))
+			} else {
+				hintsBuilder.WriteString(lipgloss.NewStyle().
+					Foreground(lipgloss.Color("8")).
+					Render(" " + hint + " "))
+			}
+			hintsBuilder.WriteString("\n")  // Add newline for vertical display
+		}
+		hintsDisplay = hintsBuilder.String()
+	}
+
 	// Combine all elements
-	return fmt.Sprintf("%s\n\n%s", conversation.String(), prompt)
+	if m.showHints && len(m.hints) > 0 {
+		return fmt.Sprintf("%s\n\n%s%s", conversation.String(), prompt, hintsDisplay)
+	} else {
+		return fmt.Sprintf("%s\n\n%s", conversation.String(), prompt)
+	}
+}
+
+// getCommandHints returns a list of command hints that match the current input
+func getCommandHints(input string) []string {
+	// List of available commands
+	commands := []string{
+		"/clear",
+		"/help",
+		"/exit",
+	}
+
+	// If input is empty or doesn't start with '/', return no hints
+	if len(input) == 0 || input[0] != '/' {
+		return nil
+	}
+
+	// Find matching commands
+	var matches []string
+	for _, cmd := range commands {
+		if strings.HasPrefix(cmd, input) {
+			matches = append(matches, cmd)
+		}
+	}
+
+	return matches
 }
 
 func main() {
 	// Clear screen and display logo first
 	utils.DisplayLogo()
-	
+
 	// Create initial model with default window size for proper text wrapping
 	initialModel := model{
 		messages:       []Message{},
@@ -342,6 +462,9 @@ func main() {
 			width:  80, // Default width, will be updated on first WindowSizeMsg
 			height: 24, // Default height, will be updated on first WindowSizeMsg
 		},
+		hints:        []string{},
+		selectedHint: -1,
+		showHints:    false,
 	}
 
 	// Create program with alternateScreen option for better performance
