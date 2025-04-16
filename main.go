@@ -203,16 +203,16 @@ func (m model) View() string {
 }
 
 func main() {
-	// Display logo once at startup
+	// Clear screen and display logo first
 	utils.DisplayLogo()
-
+	
 	// Create initial model
 	initialModel := model{
 		messages: []Message{},
 	}
 
 	// Create program with alternateScreen option for better performance
-	p := tea.NewProgram(initialModel, tea.WithAltScreen())
+	p := tea.NewProgram(initialModel)
 
 	// Run program
 	if _, err := p.Run(); err != nil {

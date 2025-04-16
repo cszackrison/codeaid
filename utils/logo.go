@@ -2,11 +2,16 @@ package utils
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"github.com/charmbracelet/lipgloss"
 )
 
 // DisplayLogo prints the full CodeAid ASCII art logo
 func DisplayLogo() {
+	// Clear terminal before showing logo
+	clearScreen()
+	
 	logo := `
    _____          _       _    _     _ 
   / ____|        | |     / \  (_)   | |
@@ -21,4 +26,11 @@ func DisplayLogo() {
 		Render(logo)
 
 	fmt.Println(styledLogo)
+}
+
+// clearScreen clears the terminal screen
+func clearScreen() {
+	cmd := exec.Command("clear")
+	cmd.Stdout = os.Stdout
+	cmd.Run()
 }
