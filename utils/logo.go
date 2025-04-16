@@ -5,7 +5,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// DisplayLogo prints the CodeAid ASCII art logo
+// DisplayLogo prints the full CodeAid ASCII art logo
 func DisplayLogo() {
 	logo := `
    _____          _       _    _     _ 
@@ -18,7 +18,6 @@ func DisplayLogo() {
 `
 	styledLogo := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("blue")).
 		Render(logo)
 
 	fmt.Println(styledLogo)
