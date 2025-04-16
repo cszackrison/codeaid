@@ -256,12 +256,12 @@ func (m model) View() string {
 		active  lipgloss.Style
 	}{
 		header:  lipgloss.NewStyle().Bold(true),                                 // Bold, default color
-		user:    lipgloss.NewStyle().Bold(true),                                 // Bold, default color
+		user:    lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),     // Bold, default color with width constraint
 		ai:      lipgloss.NewStyle().Width(m.viewport.width - 2),                // Default color with width constraint
 		error:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Width(m.viewport.width - 2), // Basic red with width constraint
 		loading: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),            // Basic yellow from default palette
-		input:   lipgloss.NewStyle(),                                            // Default color
-		active:  lipgloss.NewStyle().Underline(true),                            // Underlined instead of background color
+		input:   lipgloss.NewStyle().Width(m.viewport.width - 2),                // Default color with width constraint
+		active:  lipgloss.NewStyle().Underline(true).Width(m.viewport.width - 2), // Underlined with width constraint
 	}
 
 	// Render header
@@ -293,7 +293,7 @@ func (m model) View() string {
 
 	// Render input prompt with cursor
 	var prompt string
-	prefix := "Enter your message: "
+	prefix := "> "
 	
 	if m.loading {
 		prompt = styles.active.Render(prefix + m.input)
