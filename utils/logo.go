@@ -2,14 +2,14 @@ package utils
 
 import (
 	"fmt"
+	"github.com/charmbracelet/lipgloss"
 	"os"
 	"os/exec"
-	"github.com/charmbracelet/lipgloss"
 )
 
 func DisplayLogo() {
 	clearScreen()
-	
+
 	logo := `
  ██████╗ ██████╗ ██████╗ ███████╗ █████╗ ██╗██████╗ 
 ██╔════╝██╔═══██╗██╔══██╗██╔════╝██╔══██╗██║██╔══██╗

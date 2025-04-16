@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"codeaid/messages"
 	"context"
 	"os"
 	"strings"
@@ -12,17 +13,8 @@ import (
 	openai "github.com/sashabaranov/go-openai"
 )
 
-// ResponseMsg defines a custom message type for responses
-type ResponseMsg string
-
-// CancelMsg is a special message type returned when an operation is canceled
-type CancelMsg struct{}
-
 // Global variable to hold cancellation function
 var currentCancelFunc context.CancelFunc
-
-// ClearHistoryMsg is a message type to indicate history clearing
-type ClearHistoryMsg struct{}
 
 // Global client and environment setup to avoid repeated initialization
 var (
@@ -57,7 +49,7 @@ func ClearHistory() tea.Msg {
 	defer conversationMux.Unlock()
 
 	conversationHistory = nil
-	return ClearHistoryMsg{}
+	return messages.ClearHistoryMsg{}
 }
 
 // AddMessageToHistory adds an assistant message to the conversation history
@@ -77,8 +69,29 @@ func AddMessageToHistory(content string) {
 func ProcessUserInput(input string) tea.Cmd {
 	trimmedInput := strings.TrimSpace(input)
 
-	// Check for commands
-	switch trimmedInput {
+	// Check if input is a command (starts with /)
+	if len(trimmedInput) > 0 && trimmedInput[0] == '/' {
+		// Find command handler
+		return ExecuteCommand(trimmedInput)
+	}
+
+	// If not a command or command not found, process as a normal message
+	return FetchReply(input)
+}
+
+// ExecuteCommand finds and executes a command
+func ExecuteCommand(input string) tea.Cmd {
+	// Extract command name (everything before the first space)
+	cmdName := input
+
+	if idx := strings.Index(input, " "); idx > 0 {
+		cmdName = input[:idx]
+		// We'll use the args when we implement command arguments
+		// args = strings.TrimSpace(input[idx+1:])
+	}
+
+	// Handle built-in commands (we'll replace this when we implement commands properly)
+	switch cmdName {
 	case "/clear":
 		return func() tea.Msg {
 			return ClearHistory()
@@ -89,13 +102,14 @@ func ProcessUserInput(input string) tea.Cmd {
 				"/clear - Clear conversation history\n" +
 				"/help  - Show this help message\n" +
 				"/exit  - Exit the application"
-			return ResponseMsg(helpText)
+			return messages.ResponseMsg(helpText)
 		}
 	case "/exit":
 		return tea.Quit
-	default:
-		return FetchReply(input)
 	}
+
+	// Command not found
+	return FetchReply(input)
 }
 
 // CancelCurrentRequest cancels any ongoing API request
@@ -138,8 +152,8 @@ func FetchReply(prompt string) tea.Cmd {
 			// Update conversation history
 			conversationMux.Lock()
 			conversationHistory = append(conversationHistory, userMessage)
-			messages := make([]openai.ChatCompletionMessage, len(conversationHistory))
-			copy(messages, conversationHistory)
+			messagesCopy := make([]openai.ChatCompletionMessage, len(conversationHistory))
+			copy(messagesCopy, conversationHistory)
 			conversationMux.Unlock()
 
 			// Make API request with full conversation history
@@ -149,7 +163,7 @@ func FetchReply(prompt string) tea.Cmd {
 					Model:       "mistralai/mistral-small-3.1-24b-instruct:free",
 					MaxTokens:   1024,
 					Temperature: 0.7,
-					Messages:    messages,
+					Messages:    messagesCopy,
 				},
 			)
 
@@ -161,12 +175,12 @@ func FetchReply(prompt string) tea.Cmd {
 			default:
 				// Context not canceled, proceed with normal response
 				if err != nil {
-					resultChan <- ResponseMsg("Error: " + err.Error())
+					resultChan <- messages.ResponseMsg("Error: " + err.Error())
 				} else if len(resp.Choices) == 0 {
-					resultChan <- ResponseMsg("Error: No response received from API")
+					resultChan <- messages.ResponseMsg("Error: No response received from API")
 				} else {
 					// Send response - it will be added to history after displaying
-					resultChan <- ResponseMsg(resp.Choices[0].Message.Content)
+					resultChan <- messages.ResponseMsg(resp.Choices[0].Message.Content)
 				}
 			}
 		}()
@@ -179,10 +193,10 @@ func FetchReply(prompt string) tea.Cmd {
 		case <-timer.C:
 			// Timeout path
 			cancel() // Make sure to cancel the context on timeout
-			return ResponseMsg("Error: Request timed out after 15 seconds. Please try again.")
+			return messages.ResponseMsg("Error: Request timed out after 15 seconds. Please try again.")
 		case <-ctx.Done():
 			// Context was canceled, return CancelMsg
-			return CancelMsg{}
+			return messages.CancelMsg{}
 		}
 	}
 }

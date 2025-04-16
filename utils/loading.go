@@ -1,13 +1,11 @@
 package utils
 
 import (
+	"codeaid/messages"
 	"time"
 
 	"github.com/charmbracelet/bubbletea"
 )
-
-// TickMsg is sent when the animation needs to update
-type TickMsg struct{}
 
 // Animation constants
 const (
@@ -21,7 +19,7 @@ var animChars = []string{"⠋", "⠙", "⠚", "⠞", "⠖", "⠦", "⠴", "⠲",
 // TickAnimation sends a tick message after a short delay
 func TickAnimation() tea.Cmd {
 	return tea.Tick(animationInterval, func(_ time.Time) tea.Msg {
-		return TickMsg{}
+		return messages.TickMsg{}
 	})
 }
 
