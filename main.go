@@ -21,6 +21,7 @@ type Message struct {
 // Model represents the application state
 type model struct {
 	input           string
+	cursorPosition  int
 	messages        []Message
 	loading         bool
 	animationTick   int
@@ -43,6 +44,19 @@ func (m model) Init() tea.Cmd {
 func isControlChar(s string) bool {
 	if s == "" {
 		return false
+	}
+
+	// Check for special keys that should be treated as control characters
+	specialKeys := []string{"up", "down", "left", "right", "home", "end", "delete", "del", "backspace", "enter", "tab", "esc"}
+	for _, key := range specialKeys {
+		if s == key {
+			return true
+		}
+	}
+	
+	// Check for key combinations
+	if strings.HasPrefix(s, "ctrl+") || strings.HasPrefix(s, "shift+") || strings.HasPrefix(s, "alt+") {
+		return true
 	}
 
 	// Check for control sequences
@@ -121,6 +135,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.messages = append(m.messages, Message{Content: userInput, IsUser: true})
 			m.loading = true
 			m.input = ""
+			m.cursorPosition = 0
 
 			// Run loading animation and process user input (checking for commands)
 			return m, tea.Batch(
@@ -129,14 +144,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			)
 
 		case "backspace":
-			if len(m.input) > 0 {
-				m.input = m.input[:len(m.input)-1]
+			if len(m.input) > 0 && m.cursorPosition > 0 {
+				// Remove character before cursor
+				m.input = m.input[:m.cursorPosition-1] + m.input[m.cursorPosition:]
+				m.cursorPosition--
+			}
+			
+		case "delete", "del":
+			if len(m.input) > 0 && m.cursorPosition < len(m.input) {
+				// Remove character at cursor
+				m.input = m.input[:m.cursorPosition] + m.input[m.cursorPosition+1:]
 			}
 
+		case "left":
+			if m.cursorPosition > 0 {
+				m.cursorPosition--
+			}
+			
+		case "right":
+			if m.cursorPosition < len(m.input) {
+				m.cursorPosition++
+			}
+			
+		case "home":
+			m.cursorPosition = 0
+			
+		case "end":
+			m.cursorPosition = len(m.input)
+			
+		case "up", "down":
+			// Ignore arrow up/down keys
+			
 		default:
 			// Add typed character if not a control character
 			if !isControlChar(msg.String()) {
-				m.input += msg.String()
+				// Insert at cursor position
+				if m.cursorPosition == len(m.input) {
+					m.input += msg.String()
+				} else {
+					m.input = m.input[:m.cursorPosition] + msg.String() + m.input[m.cursorPosition:]
+				}
+				m.cursorPosition++
 			}
 		}
 
@@ -233,13 +281,32 @@ func (m model) View() string {
 		conversation.WriteString("\n\n")
 	}
 
-	// Render input prompt
+	// Render input prompt with cursor
 	var prompt string
-	inputText := "Enter your message: " + m.input
+	prefix := "Enter your message: "
+	
 	if m.loading {
-		prompt = styles.active.Render(inputText)
+		prompt = styles.active.Render(prefix + m.input)
 	} else {
-		prompt = styles.input.Render(inputText)
+		// Display input with cursor indicator
+		if m.cursorPosition == len(m.input) {
+			// Cursor at the end
+			prompt = styles.input.Render(prefix + m.input + "▎")
+		} else {
+			// Cursor in the middle - highlight the character at cursor position
+			beforeCursor := m.input[:m.cursorPosition]
+			atCursor := ""
+			if m.cursorPosition < len(m.input) {
+				atCursor = string(m.input[m.cursorPosition])
+			}
+			afterCursor := ""
+			if m.cursorPosition+1 <= len(m.input) {
+				afterCursor = m.input[m.cursorPosition+1:]
+			}
+			
+			cursorStyle := lipgloss.NewStyle().Background(lipgloss.Color("7"))
+			prompt = styles.input.Render(prefix + beforeCursor + cursorStyle.Render(atCursor) + afterCursor)
+		}
 	}
 
 	// Combine all elements
@@ -252,7 +319,8 @@ func main() {
 	
 	// Create initial model with default window size for proper text wrapping
 	initialModel := model{
-		messages: []Message{},
+		messages:       []Message{},
+		cursorPosition: 0,
 		viewport: viewport{
 			width:  80, // Default width, will be updated on first WindowSizeMsg
 			height: 24, // Default height, will be updated on first WindowSizeMsg
