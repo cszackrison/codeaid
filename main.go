@@ -255,17 +255,14 @@ func (m model) View() string {
 		input   lipgloss.Style
 		active  lipgloss.Style
 	}{
-		header:  lipgloss.NewStyle().Bold(true),                                 // Bold, default color
-		user:    lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),     // Bold, default color with width constraint
-		ai:      lipgloss.NewStyle().Width(m.viewport.width - 2),                // Default color with width constraint
-		error:   lipgloss.NewStyle().Foreground(lipgloss.Color("1")).Bold(true).Width(m.viewport.width - 2), // Basic red with width constraint
-		loading: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),            // Basic yellow from default palette
-		input:   lipgloss.NewStyle().Width(m.viewport.width - 2),                // Default color with width constraint
-		active:  lipgloss.NewStyle().Underline(true).Width(m.viewport.width - 2), // Underlined with width constraint
+		header:  lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),
+		user:    lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(m.viewport.width - 2),
+		ai:      lipgloss.NewStyle().Width(m.viewport.width - 2),
+		error:   lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Width(m.viewport.width - 2),
+		loading: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		input:   lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).Width(m.viewport.width - 2),
+		active:  lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("0")).Width(m.viewport.width - 2),
 	}
-
-	// Render header
-	header := styles.header.Render("CodeAid Chat")
 
 	// Build message history using StringBuilder for better performance
 	var conversation strings.Builder
@@ -320,7 +317,7 @@ func (m model) View() string {
 	}
 
 	// Combine all elements
-	return fmt.Sprintf("%s\n\n%s%s", header, conversation.String(), prompt)
+	return fmt.Sprintf("%s\n\n%s%s", conversation.String(), prompt)
 }
 
 func main() {
