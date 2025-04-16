@@ -18,7 +18,7 @@ func DisplayLogo() {
 `
 	styledLogo := lipgloss.NewStyle().
 		Bold(true).
-		Foreground(lipgloss.Color("63")).
+		Foreground(lipgloss.Color("blue")).
 		Render(logo)
 
 	fmt.Println(styledLogo)

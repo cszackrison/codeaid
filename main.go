@@ -24,20 +24,20 @@ func (m model) Init() tea.Cmd {
 	return nil
 }
 
-// isControlChar checks if a string is a control character
+// isControlChar checks if a string contains control characters
 func isControlChar(s string) bool {
 	if s == "" {
 		return false
 	}
 
-	// Check for ANSI escape sequences
-	if strings.HasPrefix(s, "\u001b") || strings.HasPrefix(s, "\u001B") {
+	// Check for ANSI escape sequences and ctrl+g (ASCII BEL, 0x07)
+	if strings.HasPrefix(s, "\u001b") || strings.HasPrefix(s, "\u001B") || strings.Contains(s, "\u0007") {
 		return true
 	}
 
-	// Check if it's a control character
+	// Check for any control characters
 	for _, r := range s {
-		if unicode.IsControl(r) {
+		if unicode.IsControl(r) || r < 32 || (r >= 0x7F && r <= 0x9F) {
 			return true
 		}
 	}
@@ -61,7 +61,11 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.messages = append(m.messages, "> "+userInput)
 				m.loading = true
 				m.input = ""
-				return m, tea.Batch(fetchReply(userInput), utils.TickAnimation())
+				// Show loading immediately and ensure UI updates
+				return m, tea.Batch(
+					utils.TickAnimation(),
+					fetchReply(userInput),
+				)
 			}
 		case "backspace":
 			if len(m.input) > 0 {
@@ -83,12 +87,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.animationTick++
 			return m, utils.TickAnimation()
 		}
+		return m, nil
 	}
 	return m, nil
 }
 
 func (m model) View() string {
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("63")).Render("🤖 OpenRouter Chat")
+	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("blue")).Render("🤖 OpenRouter Chat")
 
 	// Build the conversation history
 	var conversation string
@@ -96,13 +101,19 @@ func (m model) View() string {
 		md, _ := glamour.NewTermRenderer(glamour.WithAutoStyle())
 		for _, msg := range m.messages {
 			if msg[:2] == "> " {
-				// User message
-				userMsg := lipgloss.NewStyle().Foreground(lipgloss.Color("69")).Render(msg)
+				// User message - cyan for better visibility
+				userMsg := lipgloss.NewStyle().
+					Foreground(lipgloss.Color("cyan")).
+					Bold(true).
+					Render(msg)
 				conversation += userMsg + "\n"
 			} else {
-				// AI response
+				// AI response - green color
+				aiStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("green"))
+				// Format markdown content
 				formatted, _ := md.Render(msg)
-				conversation += formatted + "\n"
+				// Add a line before AI response for better separation
+				conversation += aiStyle.Render(formatted) + "\n"
 			}
 		}
 	}
@@ -110,12 +121,16 @@ func (m model) View() string {
 	// Loading animation
 	if m.loading {
 		currentChar := utils.GetLoadingAnimation(m.animationTick)
-		loadingMsg := lipgloss.NewStyle().Foreground(lipgloss.Color("208")).Render("Thinking " + currentChar)
+		loadingMsg := lipgloss.NewStyle().
+			Foreground(lipgloss.Color("yellow")).
+			Bold(true).
+			Render("Thinking " + currentChar)
 		return header + "\n" + conversation + loadingMsg
 	}
 
-	// Input prompt
-	prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("241")).Render("Enter your message: " + m.input)
+	// Input prompt - ensure we're not including control characters in the rendered output
+	inputText := "Enter your message: " + m.input
+	prompt := lipgloss.NewStyle().Foreground(lipgloss.Color("gray")).Render(inputText)
 	return header + "\n" + conversation + prompt
 }
 
