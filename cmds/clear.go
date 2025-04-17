@@ -25,7 +25,3 @@ func (c ClearCommand) Execute(args string) tea.Cmd {
 	}
 }
 
-// Register the command
-func init() {
-	RegisterCommand(ClearCommand{})
-}

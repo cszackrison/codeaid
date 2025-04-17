@@ -22,7 +22,3 @@ func (c ExitCommand) Execute(args string) tea.Cmd {
 	return tea.Quit
 }
 
-// Register the command
-func init() {
-	RegisterCommand(ExitCommand{})
-}

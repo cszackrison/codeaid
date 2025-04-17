@@ -40,7 +40,3 @@ func (c HelpCommand) Execute(args string) tea.Cmd {
 	}
 }
 
-// Register the command
-func init() {
-	RegisterCommand(HelpCommand{})
-}
