@@ -12,9 +12,24 @@ type Data struct {
 	Model            string `json:"model"`
 }
 
+// Model constants
+const (
+	DefaultModelName = "mistralai/mistral-small-3.1-24b-instruct:free"
+)
+
+// Available models
+var AvailableModels = []string{
+	"mistralai/mistral-small-3.1-24b-instruct:free",
+	"anthropic/claude-3-haiku-20240307",
+	"anthropic/claude-3-sonnet-20240229",
+	"anthropic/claude-3-opus-20240229",
+	"meta-llama/llama-3-8b-instruct",
+	"meta-llama/llama-3-70b-instruct",
+}
+
 // DefaultModel returns the default model identifier
 func DefaultModel() string {
-	return "mistralai/mistral-small-3.1-24b-instruct:free"
+	return DefaultModelName
 }
 
 // GetConfigDir returns the configuration directory path

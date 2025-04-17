@@ -41,10 +41,11 @@ func RunFirstTimeSetup(forceSetup bool) error {
 		cfg = existingConfig
 	}
 
-	// Get OpenRouter API key
+	// Get OpenRouter API key and mask it for display
 	currentKey := ""
 	if cfg.OpenRouterAPIKey != "" {
-		// Mask the key for display
+		// Import utils package here would create circular dependency
+		// So implement masking inline
 		if len(cfg.OpenRouterAPIKey) > 8 {
 			currentKey = cfg.OpenRouterAPIKey[:4] + "..." + cfg.OpenRouterAPIKey[len(cfg.OpenRouterAPIKey)-4:]
 		} else {
@@ -61,14 +62,7 @@ func RunFirstTimeSetup(forceSetup bool) error {
 
 	// Model selection
 	fmt.Println("\nModel selection:")
-	models := []string{
-		"mistralai/mistral-small-3.1-24b-instruct:free",
-		"anthropic/claude-3-haiku-20240307",
-		"anthropic/claude-3-sonnet-20240229",
-		"anthropic/claude-3-opus-20240229",
-		"meta-llama/llama-3-8b-instruct",
-		"meta-llama/llama-3-70b-instruct",
-	}
+	models := AvailableModels
 
 	fmt.Printf("Default model: %s\n\n", cfg.Model)
 	for i, model := range models {

@@ -6,7 +6,7 @@ import (
 )
 
 // commandRegistry holds all registered commands
-var commandRegistry []Command
+var commandRegistry = make(map[string]Command)
 
 // init function registers all commands
 func init() {
@@ -19,29 +19,32 @@ func init() {
 
 // RegisterCommand adds a command to the registry
 func RegisterCommand(cmd Command) {
-	commandRegistry = append(commandRegistry, cmd)
+	commandRegistry[cmd.Name()] = cmd
 }
 
 // GetCommand returns a command by its name, or nil if not found
 func GetCommand(name string) utils.CommandExecutor {
-	for _, cmd := range commandRegistry {
-		if cmd.Name() == name {
-			return cmd
-		}
+	cmd, ok := commandRegistry[name]
+	if !ok {
+		return nil
 	}
-	return nil
+	return cmd
 }
 
 // GetAllCommands returns all registered commands
 func GetAllCommands() []Command {
-	return commandRegistry
+	cmds := make([]Command, 0, len(commandRegistry))
+	for _, cmd := range commandRegistry {
+		cmds = append(cmds, cmd)
+	}
+	return cmds
 }
 
 // GetCommandNames returns all command names
 func GetCommandNames() []string {
-	var names []string
-	for _, cmd := range commandRegistry {
-		names = append(names, cmd.Name())
+	names := make([]string, 0, len(commandRegistry))
+	for name := range commandRegistry {
+		names = append(names, name)
 	}
 	return names
 }
@@ -57,10 +60,10 @@ func FindMatchingCommands(prefix string) []string {
 		return nil
 	}
 
-	var matches []string
-	for _, cmd := range commandRegistry {
-		if strings.HasPrefix(cmd.Name(), prefix) {
-			matches = append(matches, cmd.Name())
+	matches := []string{}
+	for name := range commandRegistry {
+		if strings.HasPrefix(name, prefix) {
+			matches = append(matches, name)
 		}
 	}
 	return matches

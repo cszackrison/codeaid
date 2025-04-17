@@ -27,28 +27,14 @@ type ClearHistoryMsg struct{}
 // TickMsg is sent when the animation needs to update
 type TickMsg struct{}
 
-// ConfigInitMsg is sent to start the config setup process
-type ConfigInitMsg struct {
-	CurrentAPIKey string
-	CurrentModel  string 
-}
-
-// ConfigPromptMsg is sent to prompt for a specific config value
-type ConfigPromptMsg struct {
-	PromptText string
-	Options    []string
-	ConfigStep string
-	Config     interface{}
-}
-
-// ConfigInputMsg is sent when user provides input for a config prompt
-type ConfigInputMsg struct {
-	Input      string
-	ConfigStep string
-	Config     interface{}
-}
-
-// ConfigCompleteMsg is sent when config setup is complete
-type ConfigCompleteMsg struct {
-	FilePath string
+// ConfigMsg is a unified configuration message type with a type field
+type ConfigMsg struct {
+	Type        string      // "init", "prompt", "complete"
+	PromptText  string      // For prompts and init messages
+	Options     []string    // For selection prompts
+	ConfigStep  string      // Current configuration step
+	Config      interface{} // Configuration data
+	FilePath    string      // For complete messages
+	CurrentKey  string      // For init messages (masked key)
+	CurrentModel string     // For init messages
 }

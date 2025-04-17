@@ -61,10 +61,13 @@ func initClient() *openai.Client {
 			apiKey = os.Getenv("OPENROUTER_API_KEY")
 		}
 
-		openAIConfig := openai.DefaultConfig(apiKey)
-		openAIConfig.BaseURL = "https://openrouter.ai/api/v1"
-		apiClient = openai.NewClientWithConfig(openAIConfig)
-		clientInitialized = true
+		// Initialize client only if we have an API key
+		if apiKey != "" {
+			openAIConfig := openai.DefaultConfig(apiKey)
+			openAIConfig.BaseURL = "https://openrouter.ai/api/v1"
+			apiClient = openai.NewClientWithConfig(openAIConfig)
+			clientInitialized = true
+		}
 	}
 
 	return apiClient
@@ -79,7 +82,19 @@ func GetModel() string {
 	}
 	
 	// Fall back to default model
-	return config.DefaultModel()
+	return config.DefaultModelName
+}
+
+// MaskAPIKey masks an API key for display
+func MaskAPIKey(key string) string {
+	if key == "" {
+		return ""
+	}
+	
+	if len(key) > 8 {
+		return key[:4] + "..." + key[len(key)-4:]
+	}
+	return "****"
 }
 
 // ClearHistory resets the conversation history

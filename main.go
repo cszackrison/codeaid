@@ -163,17 +163,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					
 					// Prepare model selection message
 					return m, func() tea.Msg {
-						return messages.ConfigPromptMsg{
+						return messages.ConfigMsg{
+							Type: "prompt",
 							PromptText: fmt.Sprintf("\nModel selection:\nDefault model: %s\n", m.configData.Model),
-							Options: []string{
-								"mistralai/mistral-small-3.1-24b-instruct:free",
-								"anthropic/claude-3-haiku-20240307",
-								"anthropic/claude-3-sonnet-20240229",
-								"anthropic/claude-3-opus-20240229",
-								"meta-llama/llama-3-8b-instruct",
-								"meta-llama/llama-3-70b-instruct",
-								"Custom model",
-							},
+							Options: append(append([]string{}, config.AvailableModels...), "Custom model"),
 							ConfigStep: "model",
 							Config:     m.configData,
 						}
@@ -190,7 +183,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.cursorPosition = 0
 						m.configStep = "custom_model"
 						return m, func() tea.Msg {
-							return messages.ConfigPromptMsg{
+							return messages.ConfigMsg{
+								Type: "prompt",
 								PromptText: "Enter custom model identifier:",
 								ConfigStep: "custom_model",
 								Config:     m.configData,
@@ -200,14 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						// Try to parse as a number
 						idx := 0
 						fmt.Sscanf(modelChoice, "%d", &idx)
-						models := []string{
-							"mistralai/mistral-small-3.1-24b-instruct:free",
-							"anthropic/claude-3-haiku-20240307",
-							"anthropic/claude-3-sonnet-20240229",
-							"anthropic/claude-3-opus-20240229",
-							"meta-llama/llama-3-8b-instruct",
-							"meta-llama/llama-3-70b-instruct",
-						}
+						models := config.AvailableModels
 						if idx >= 1 && idx <= len(models) {
 							m.configData.Model = models[idx-1]
 						}
@@ -225,7 +212,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 							m.input = ""
 							m.cursorPosition = 0
 							return m, func() tea.Msg {
-								return messages.ConfigCompleteMsg{
+								return messages.ConfigMsg{
+									Type:     "complete",
 									FilePath: configPath,
 								}
 							}
@@ -249,7 +237,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						m.input = ""
 						m.cursorPosition = 0
 						return m, func() tea.Msg {
-							return messages.ConfigCompleteMsg{
+							return messages.ConfigMsg{
+								Type: "complete",
 								FilePath: configPath,
 							}
 						}
@@ -425,73 +414,71 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		return m, nil
 			
-	case messages.ConfigInitMsg:
-		// Start the config flow with API key prompt
-		configInit := msg
+	case messages.ConfigMsg:
+		// Handle all config messages in one case
+		configMsg := msg
 		
-		// Load current configuration
-		cfg, err := config.Load()
-		if err != nil {
-			cfg = &config.Data{
-				Model: config.DefaultModel(),
+		switch configMsg.Type {
+		case "init":
+			// Start the config flow with API key prompt
+			// Load current configuration
+			cfg, err := config.Load()
+			if err != nil {
+				cfg = &config.Data{
+					Model: config.DefaultModel(),
+				}
 			}
-		}
-		
-		m.messages = append(m.messages, Message{
-			Content: fmt.Sprintf(
-				"CodeAid Configuration\n====================\nPress Enter to keep current values.\n\nCurrent OpenRouter API Key: %s\nOpenRouter API Key: ",
-				configInit.CurrentAPIKey),
-			IsUser:    false,
-			IsCommand: true,
-		})
-		
-		m.loading = false
-		// Set up for special input handling
-		m.configMode = true
-		m.configStep = "api_key"
-		
-		// Store the actual API key, not the masked version
-		m.configData = &config.Data{
-			OpenRouterAPIKey: cfg.OpenRouterAPIKey, // Store the actual API key
-			Model:            configInit.CurrentModel,
-		}
-		return m, nil
-
-	case messages.ConfigPromptMsg:
-		// Handle config prompt
-		configPrompt := msg
-		
-		content := configPrompt.PromptText
-		if len(configPrompt.Options) > 0 {
-			content += "\n"
-			for i, option := range configPrompt.Options {
-				content += fmt.Sprintf("%d) %s\n", i+1, option)
+			
+			m.messages = append(m.messages, Message{
+				Content:   configMsg.PromptText,
+				IsUser:    false,
+				IsCommand: true,
+			})
+			
+			m.loading = false
+			// Set up for special input handling
+			m.configMode = true
+			m.configStep = configMsg.ConfigStep
+			
+			// Store the actual API key, not the masked version
+			m.configData = &config.Data{
+				OpenRouterAPIKey: cfg.OpenRouterAPIKey, // Store the actual API key
+				Model:            configMsg.CurrentModel,
 			}
+			
+		case "prompt":
+			// Handle config prompt
+			content := configMsg.PromptText
+			if len(configMsg.Options) > 0 {
+				content += "\n"
+				for i, option := range configMsg.Options {
+					content += fmt.Sprintf("%d) %s\n", i+1, option)
+				}
+			}
+			
+			m.messages = append(m.messages, Message{
+				Content:   content,
+				IsUser:    false,
+				IsCommand: true,
+			})
+			
+			m.configStep = configMsg.ConfigStep
+			if cfg, ok := configMsg.Config.(*config.Data); ok {
+				m.configData = cfg
+			}
+			
+		case "complete":
+			// Config complete
+			m.messages = append(m.messages, Message{
+				Content:   fmt.Sprintf("Configuration saved to %s", configMsg.FilePath),
+				IsUser:    false,
+				IsCommand: true,
+			})
+			m.configMode = false
+			m.configStep = ""
+			m.configData = nil
 		}
 		
-		m.messages = append(m.messages, Message{
-			Content:   content,
-			IsUser:    false,
-			IsCommand: true,
-		})
-		
-		m.configStep = configPrompt.ConfigStep
-		if cfg, ok := configPrompt.Config.(*config.Data); ok {
-			m.configData = cfg
-		}
-		return m, nil
-
-	case messages.ConfigCompleteMsg:
-		// Config complete
-		completedMsg := msg
-		m.messages = append(m.messages, Message{
-			Content:   fmt.Sprintf("Configuration saved to %s", completedMsg.FilePath),
-			IsUser:    false,
-			IsCommand: true,
-		})
-		m.configMode = false
-		m.configStep = ""
-		m.configData = nil
 		return m, nil
 		
 	case messages.HelpMsg:
