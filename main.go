@@ -332,21 +332,25 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	// Define styles using default terminal colors where possible
 	styles := struct {
-		header  lipgloss.Style
-		user    lipgloss.Style
-		ai      lipgloss.Style
-		error   lipgloss.Style
-		loading lipgloss.Style
-		input   lipgloss.Style
-		active  lipgloss.Style
+		header      lipgloss.Style
+		user        lipgloss.Style
+		ai          lipgloss.Style
+		error       lipgloss.Style
+		loading     lipgloss.Style
+		input       lipgloss.Style
+		active      lipgloss.Style
+		hint        lipgloss.Style
+		hintSelected lipgloss.Style
 	}{
-		header:  lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),
-		user:    lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(m.viewport.width - 2),
-		ai:      lipgloss.NewStyle().Width(m.viewport.width - 2),
-		error:   lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Width(m.viewport.width - 2),
-		loading: lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		input:   lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).Width(m.viewport.width - 2),
-		active:  lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("0")).Width(m.viewport.width - 2),
+		header:      lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),
+		user:        lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(m.viewport.width - 2),
+		ai:          lipgloss.NewStyle().Width(m.viewport.width - 2),
+		error:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Width(m.viewport.width - 2),
+		loading:     lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		input:       lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).MarginBottom(1).Width(m.viewport.width - 2),
+		active:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("0")).Width(m.viewport.width - 2),
+		hint:        lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("0")).Width(m.viewport.width - 2),
+		hintSelected: lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Width(m.viewport.width - 2),
 	}
 
 	// Build message history using StringBuilder for better performance
@@ -410,15 +414,9 @@ func (m model) View() string {
 		for i, hint := range m.hints {
 			if i == m.selectedHint {
 				// Highlight the selected hint
-				hintsBuilder.WriteString(lipgloss.NewStyle().
-					Background(lipgloss.Color("4")).
-					Foreground(lipgloss.Color("0")).
-					Bold(true).
-					Render(" " + hint + " "))
+				hintsBuilder.WriteString(styles.hintSelected.Render(" " + hint + " "))
 			} else {
-				hintsBuilder.WriteString(lipgloss.NewStyle().
-					Foreground(lipgloss.Color("8")).
-					Render(" " + hint + " "))
+				hintsBuilder.WriteString(styles.hint.Render(" " + hint + " "))
 			}
 			hintsBuilder.WriteString("\n")  // Add newline for vertical display
 		}
