@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"codeaid/config"
 	"codeaid/messages"
 	"context"
 	"os"
@@ -12,6 +13,24 @@ import (
 	"github.com/joho/godotenv"
 	openai "github.com/sashabaranov/go-openai"
 )
+
+// CommandHandler defines the interface for handling commands
+type CommandHandler interface {
+	GetCommand(name string) CommandExecutor
+}
+
+// CommandExecutor defines an interface for executing commands
+type CommandExecutor interface {
+	Execute(args string) tea.Cmd
+}
+
+// Set globally by main.go
+var commandHandler CommandHandler
+
+// SetCommandHandler sets the command handler
+func SetCommandHandler(handler CommandHandler) {
+	commandHandler = handler
+}
 
 // Global variable to hold cancellation function
 var currentCancelFunc context.CancelFunc
@@ -32,15 +51,35 @@ func initClient() *openai.Client {
 	defer clientInitMux.Unlock()
 
 	if !clientInitialized {
-		_ = godotenv.Load()
-		apiKey = os.Getenv("OPENROUTER_API_KEY")
-		config := openai.DefaultConfig(apiKey)
-		config.BaseURL = "https://openrouter.ai/api/v1"
-		apiClient = openai.NewClientWithConfig(config)
+		// First try to load from config file
+		cfg, err := config.Load()
+		if err == nil && cfg != nil && cfg.OpenRouterAPIKey != "" {
+			apiKey = cfg.OpenRouterAPIKey
+		} else {
+			// Fall back to .env file if config doesn't exist or doesn't have a key
+			_ = godotenv.Load()
+			apiKey = os.Getenv("OPENROUTER_API_KEY")
+		}
+
+		openAIConfig := openai.DefaultConfig(apiKey)
+		openAIConfig.BaseURL = "https://openrouter.ai/api/v1"
+		apiClient = openai.NewClientWithConfig(openAIConfig)
 		clientInitialized = true
 	}
 
 	return apiClient
+}
+
+// GetModel returns the model to use for API requests
+func GetModel() string {
+	// Try to load from config file
+	cfg, err := config.Load()
+	if err == nil && cfg != nil && cfg.Model != "" {
+		return cfg.Model
+	}
+	
+	// Fall back to default model
+	return config.DefaultModel()
 }
 
 // ClearHistory resets the conversation history
@@ -83,34 +122,22 @@ func ProcessUserInput(input string) tea.Cmd {
 func ExecuteCommand(input string) tea.Cmd {
 	// Extract command name (everything before the first space)
 	cmdName := input
-	// args variable is prepared for future implementation
-	_ = ""
+	args := ""
 
 	if idx := strings.Index(input, " "); idx > 0 {
 		cmdName = input[:idx]
-		// args = strings.TrimSpace(input[idx+1:])
+		args = strings.TrimSpace(input[idx+1:])
 	}
 
-	// Handle built-in commands (we'll replace this when we implement commands properly)
-	switch cmdName {
-	case "/clear":
-		return func() tea.Msg {
-			return ClearHistory()
+	// If command handler is set, use it
+	if commandHandler != nil {
+		cmd := commandHandler.GetCommand(cmdName)
+		if cmd != nil {
+			return cmd.Execute(args)
 		}
-	case "/help":
-		return func() tea.Msg {
-			helpText := "Available commands:\n" +
-				"/clear - Clear conversation history\n" +
-				"/help  - Show this help message\n" +
-				"/exit  - Exit the application"
-			// Return response that will be displayed but not part of conversation
-			return messages.CommandResponseMsg(helpText)
-		}
-	case "/exit":
-		return tea.Quit
 	}
 
-	// Command not found
+	// Command not found or handler not set, process as normal message
 	return FetchReply(input)
 }
 
@@ -162,7 +189,7 @@ func FetchReply(prompt string) tea.Cmd {
 			resp, err := client.CreateChatCompletion(
 				ctx,
 				openai.ChatCompletionRequest{
-					Model:       "mistralai/mistral-small-3.1-24b-instruct:free",
+					Model:       GetModel(),
 					MaxTokens:   1024,
 					Temperature: 0.7,
 					Messages:    messagesCopy,

@@ -1,11 +1,21 @@
 package cmds
 
 import (
+	"codeaid/utils"
 	"strings"
 )
 
 // commandRegistry holds all registered commands
 var commandRegistry []Command
+
+// init function registers all commands
+func init() {
+	// Register all commands here
+	RegisterCommand(ClearCommand{})
+	RegisterCommand(ExitCommand{})
+	RegisterCommand(HelpCommand{})
+	RegisterCommand(ConfigCommand{})
+}
 
 // RegisterCommand adds a command to the registry
 func RegisterCommand(cmd Command) {
@@ -13,7 +23,7 @@ func RegisterCommand(cmd Command) {
 }
 
 // GetCommand returns a command by its name, or nil if not found
-func GetCommand(name string) Command {
+func GetCommand(name string) utils.CommandExecutor {
 	for _, cmd := range commandRegistry {
 		if cmd.Name() == name {
 			return cmd
@@ -54,4 +64,12 @@ func FindMatchingCommands(prefix string) []string {
 		}
 	}
 	return matches
+}
+
+// CommandRegistry implements the utils.CommandHandler interface
+type CommandRegistry struct{}
+
+// GetCommand returns a command by its name
+func (cr CommandRegistry) GetCommand(name string) utils.CommandExecutor {
+	return GetCommand(name)
 }

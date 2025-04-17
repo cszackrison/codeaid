@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"syscall"
 	"unicode"
 
+	"codeaid/cmds"
+	"codeaid/config"
 	"codeaid/messages"
 	"codeaid/utils"
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,6 +35,9 @@ type model struct {
 	hints            []string
 	selectedHint     int
 	showHints        bool
+	configMode       bool
+	configStep       string
+	configData       *config.Data
 }
 
 // Viewport manages the visible area of the chat
@@ -134,7 +140,128 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			if m.input == "" {
+			if m.input == "" && !m.configMode {
+				return m, nil
+			}
+
+			// Handle config mode input
+			if m.configMode {
+				// Process config input based on the current step
+				switch m.configStep {
+				case "api_key":
+					// Handle API key input
+					apiKey := m.input
+					if apiKey == "" && m.configData.OpenRouterAPIKey != "" {
+						// Keep existing value if empty input
+						apiKey = m.configData.OpenRouterAPIKey
+					}
+					m.configData.OpenRouterAPIKey = apiKey
+					
+					// Move to model selection
+					m.input = ""
+					m.cursorPosition = 0
+					
+					// Prepare model selection message
+					return m, func() tea.Msg {
+						return messages.ConfigPromptMsg{
+							PromptText: fmt.Sprintf("\nModel selection:\nDefault model: %s\n", m.configData.Model),
+							Options: []string{
+								"mistralai/mistral-small-3.1-24b-instruct:free",
+								"anthropic/claude-3-haiku-20240307",
+								"anthropic/claude-3-sonnet-20240229",
+								"anthropic/claude-3-opus-20240229",
+								"meta-llama/llama-3-8b-instruct",
+								"meta-llama/llama-3-70b-instruct",
+								"Custom model",
+							},
+							ConfigStep: "model",
+							Config:     m.configData,
+						}
+					}
+					
+				case "model":
+					modelChoice := m.input
+					if modelChoice == "" {
+						// Keep existing model if empty input
+						// Skip to save
+					} else if modelChoice == "7" || strings.ToLower(modelChoice) == "custom" {
+						// Move to custom model input
+						m.input = ""
+						m.cursorPosition = 0
+						m.configStep = "custom_model"
+						return m, func() tea.Msg {
+							return messages.ConfigPromptMsg{
+								PromptText: "Enter custom model identifier:",
+								ConfigStep: "custom_model",
+								Config:     m.configData,
+							}
+						}
+					} else {
+						// Try to parse as a number
+						idx := 0
+						fmt.Sscanf(modelChoice, "%d", &idx)
+						models := []string{
+							"mistralai/mistral-small-3.1-24b-instruct:free",
+							"anthropic/claude-3-haiku-20240307",
+							"anthropic/claude-3-sonnet-20240229",
+							"anthropic/claude-3-opus-20240229",
+							"meta-llama/llama-3-8b-instruct",
+							"meta-llama/llama-3-70b-instruct",
+						}
+						if idx >= 1 && idx <= len(models) {
+							m.configData.Model = models[idx-1]
+						}
+					}
+					
+					// If not custom model, save config now
+					if m.configStep != "custom_model" {
+						// Save config
+						configPath, err := config.GetConfigFilePath()
+						if err == nil {
+							_ = config.Save(m.configData)
+							// Complete config
+							m.configMode = false
+							m.configStep = ""
+							m.input = ""
+							m.cursorPosition = 0
+							return m, func() tea.Msg {
+								return messages.ConfigCompleteMsg{
+									FilePath: configPath,
+								}
+							}
+						}
+					}
+					
+				case "custom_model":
+					// Handle custom model input
+					customModel := m.input
+					if customModel != "" {
+						m.configData.Model = customModel
+					}
+					
+					// Save config
+					configPath, err := config.GetConfigFilePath()
+					if err == nil {
+						_ = config.Save(m.configData)
+						// Complete config
+						m.configMode = false
+						m.configStep = ""
+						m.input = ""
+						m.cursorPosition = 0
+						return m, func() tea.Msg {
+							return messages.ConfigCompleteMsg{
+								FilePath: configPath,
+							}
+						}
+					}
+				}
+				
+				// Reset if we reach here due to an error
+				m.configMode = false
+				m.configStep = ""
+				m.configData = nil
+				m.input = ""
+				m.cursorPosition = 0
 				return m, nil
 			}
 
@@ -296,6 +423,75 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		content := string(msg)
 		m.messages = append(m.messages, Message{Content: content, IsUser: false, IsCommand: true})
 		m.loading = false
+		return m, nil
+			
+	case messages.ConfigInitMsg:
+		// Start the config flow with API key prompt
+		configInit := msg
+		
+		// Load current configuration
+		cfg, err := config.Load()
+		if err != nil {
+			cfg = &config.Data{
+				Model: config.DefaultModel(),
+			}
+		}
+		
+		m.messages = append(m.messages, Message{
+			Content: fmt.Sprintf(
+				"CodeAid Configuration\n====================\nPress Enter to keep current values.\n\nCurrent OpenRouter API Key: %s\nOpenRouter API Key: ",
+				configInit.CurrentAPIKey),
+			IsUser:    false,
+			IsCommand: true,
+		})
+		
+		m.loading = false
+		// Set up for special input handling
+		m.configMode = true
+		m.configStep = "api_key"
+		
+		// Store the actual API key, not the masked version
+		m.configData = &config.Data{
+			OpenRouterAPIKey: cfg.OpenRouterAPIKey, // Store the actual API key
+			Model:            configInit.CurrentModel,
+		}
+		return m, nil
+
+	case messages.ConfigPromptMsg:
+		// Handle config prompt
+		configPrompt := msg
+		
+		content := configPrompt.PromptText
+		if len(configPrompt.Options) > 0 {
+			content += "\n"
+			for i, option := range configPrompt.Options {
+				content += fmt.Sprintf("%d) %s\n", i+1, option)
+			}
+		}
+		
+		m.messages = append(m.messages, Message{
+			Content:   content,
+			IsUser:    false,
+			IsCommand: true,
+		})
+		
+		m.configStep = configPrompt.ConfigStep
+		if cfg, ok := configPrompt.Config.(*config.Data); ok {
+			m.configData = cfg
+		}
+		return m, nil
+
+	case messages.ConfigCompleteMsg:
+		// Config complete
+		completedMsg := msg
+		m.messages = append(m.messages, Message{
+			Content:   fmt.Sprintf("Configuration saved to %s", completedMsg.FilePath),
+			IsUser:    false,
+			IsCommand: true,
+		})
+		m.configMode = false
+		m.configStep = ""
+		m.configData = nil
 		return m, nil
 		
 	case messages.HelpMsg:
@@ -469,27 +665,48 @@ func getCommandHints(input string) []string {
 		return nil
 	}
 
-	// Available commands
-	commands := []string{
-		"/clear",
-		"/help",
-		"/exit",
-	}
-
-	// Find matching commands
-	var matches []string
-	for _, cmd := range commands {
-		if strings.HasPrefix(cmd, input) {
-			matches = append(matches, cmd)
-		}
-	}
-
-	return matches
+	// Use the command registry to find matches
+	return cmds.FindMatchingCommands(input)
 }
 
 func main() {
+	// Check command-line arguments for --config flag
+	configMode := false
+	for _, arg := range os.Args {
+		if arg == "--config" {
+			configMode = true
+			break
+		}
+	}
+
 	// Clear screen and display logo first
 	utils.DisplayLogo()
+
+	// Run setup in config mode or first-time setup
+	if configMode {
+		// Run setup and exit
+		fmt.Println("Entering configuration mode...")
+		err := config.RunFirstTimeSetup(true) // true means always run setup
+		if err != nil {
+			fmt.Printf("Error during setup: %v\n", err)
+		}
+		fmt.Println("\nConfiguration completed. Press Enter to launch the application...")
+		fmt.Scanln() // Wait for Enter key
+		// Restart without --config flag
+		execPath, _ := os.Executable()
+		syscall.Exec(execPath, []string{execPath}, os.Environ())
+		return // This won't be reached
+	} else {
+		// Normal startup - check for first-time setup
+		err := config.RunFirstTimeSetup(false) // false means only run if no config exists
+		if err != nil {
+			fmt.Printf("Error during setup: %v\n", err)
+			os.Exit(1)
+		}
+	}
+
+	// Register command handler
+	utils.SetCommandHandler(cmds.CommandRegistry{})
 
 	// Create initial model with default window size for proper text wrapping
 	initialModel := model{
