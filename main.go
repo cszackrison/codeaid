@@ -15,22 +15,23 @@ import (
 
 // Message represents a single chat message
 type Message struct {
-	Content string
-	IsUser  bool
+	Content     string
+	IsUser      bool
+	IsCommand   bool
 }
 
 // Model represents the application state
 type model struct {
-	input           string
-	cursorPosition  int
-	messages        []Message
-	loading         bool
-	animationTick   int
-	viewport        viewport
+	input            string
+	cursorPosition   int
+	messages         []Message
+	loading          bool
+	animationTick    int
+	viewport         viewport
 	markdownRenderer *glamour.TermRenderer
-	hints           []string
-	selectedHint    int
-	showHints       bool
+	hints            []string
+	selectedHint     int
+	showHints        bool
 }
 
 // Viewport manages the visible area of the chat
@@ -57,7 +58,7 @@ func isControlChar(s string) bool {
 			return true
 		}
 	}
-	
+
 	// Check for key combinations
 	if strings.HasPrefix(s, "ctrl+") || strings.HasPrefix(s, "shift+") || strings.HasPrefix(s, "alt+") {
 		return true
@@ -83,9 +84,9 @@ func containsMarkdown(content string) bool {
 	markdownPatterns := []string{
 		"```", // Code blocks
 		"# ",  // Headers
-		"## ", 
-		"### ", 
-		"* ",  // Lists
+		"## ",
+		"### ",
+		"* ", // Lists
 		"- ",
 		"1. ", // Ordered lists
 		"[",   // Links
@@ -104,7 +105,7 @@ func containsMarkdown(content string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -132,7 +133,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.showHints = false
 				return m, nil
 			}
-			
+
 			if m.input == "" {
 				return m, nil
 			}
@@ -166,7 +167,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Remove character before cursor
 				m.input = m.input[:m.cursorPosition-1] + m.input[m.cursorPosition:]
 				m.cursorPosition--
-				
+
 				// Update hints based on new input
 				m.hints = getCommandHints(m.input)
 				if len(m.hints) > 0 {
@@ -176,12 +177,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.showHints = false
 				}
 			}
-			
+
 		case tea.KeyDelete:
 			if len(m.input) > 0 && m.cursorPosition < len(m.input) {
 				// Remove character at cursor
 				m.input = m.input[:m.cursorPosition] + m.input[m.cursorPosition+1:]
-				
+
 				// Update hints based on new input
 				m.hints = getCommandHints(m.input)
 				if len(m.hints) > 0 {
@@ -196,18 +197,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.cursorPosition > 0 {
 				m.cursorPosition--
 			}
-			
+
 		case tea.KeyRight:
 			if m.cursorPosition < len(m.input) {
 				m.cursorPosition++
 			}
-			
+
 		case tea.KeyHome:
 			m.cursorPosition = 0
-			
+
 		case tea.KeyEnd:
 			m.cursorPosition = len(m.input)
-			
+
 		case tea.KeyUp:
 			// Handle up key for hint navigation
 			if m.showHints && len(m.hints) > 0 {
@@ -218,18 +219,18 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.selectedHint = len(m.hints) - 1
 				}
 			}
-			
+
 		case tea.KeyDown:
 			// Handle down key for hint navigation
 			if m.showHints && len(m.hints) > 0 {
-				if m.selectedHint < len(m.hints) - 1 {
+				if m.selectedHint < len(m.hints)-1 {
 					m.selectedHint++
 				} else {
 					// Wrap around to the first hint
 					m.selectedHint = 0
 				}
 			}
-			
+
 		case tea.KeySpace:
 			// Handle space key
 			if m.cursorPosition == len(m.input) {
@@ -238,7 +239,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.input = m.input[:m.cursorPosition] + " " + m.input[m.cursorPosition:]
 			}
 			m.cursorPosition++
-		
+
 		case tea.KeyTab:
 			// Handle tab key for autocomplete
 			if m.showHints && len(m.hints) > 0 && m.selectedHint >= 0 && m.selectedHint < len(m.hints) {
@@ -247,7 +248,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.cursorPosition = len(m.input)
 				m.showHints = false
 			}
-			
+
 		default:
 			// For all other keys, check if they're text input
 			if msg.Type == tea.KeyRunes {
@@ -258,7 +259,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.input = m.input[:m.cursorPosition] + string(msg.Runes) + m.input[m.cursorPosition:]
 				}
 				m.cursorPosition++
-				
+
 				// Update hints based on new input
 				m.hints = getCommandHints(m.input)
 				if len(m.hints) > 0 {
@@ -289,18 +290,43 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			utils.AddMessageToHistory(content)
 			return nil
 		}
-		
+
 	case messages.CommandResponseMsg:
 		// Handle command response (display only, not added to conversation history)
 		content := string(msg)
-		m.messages = append(m.messages, Message{Content: content, IsUser: false})
+		m.messages = append(m.messages, Message{Content: content, IsUser: false, IsCommand: true})
+		m.loading = false
+		return m, nil
+		
+	case messages.HelpMsg:
+		// Handle help message with custom styling
+		helpMsg := msg
+		var sb strings.Builder
+		
+		// Style the header using styles from the View function
+		headerStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("3"))
+		sb.WriteString(headerStyle.Render(helpMsg.Header) + "\n")
+		
+		// Style for command names
+		cmdStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("4"))
+		// Style for descriptions
+		descStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("7"))
+		
+		for _, cmd := range helpMsg.Commands {
+			sb.WriteString(cmdStyle.Render(cmd.Name))
+			sb.WriteString(" - ")
+			sb.WriteString(descStyle.Render(cmd.Description))
+			sb.WriteString("\n")
+		}
+		
+		// Add the styled help content to messages
+		m.messages = append(m.messages, Message{Content: sb.String(), IsUser: false, IsCommand: true})
 		m.loading = false
 		return m, nil
 
 	case messages.ClearHistoryMsg:
 		// Clear the chat history in the UI
 		m.messages = []Message{
-			{Content: "Chat history has been cleared.", IsUser: false},
 		}
 		m.loading = false
 		return m, nil
@@ -332,25 +358,27 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	// Define styles using default terminal colors where possible
 	styles := struct {
-		header      lipgloss.Style
-		user        lipgloss.Style
-		ai          lipgloss.Style
-		error       lipgloss.Style
-		loading     lipgloss.Style
-		input       lipgloss.Style
-		active      lipgloss.Style
-		hint        lipgloss.Style
+		header       lipgloss.Style
+		user         lipgloss.Style
+		ai           lipgloss.Style
+		error        lipgloss.Style
+		loading      lipgloss.Style
+		input        lipgloss.Style
+		active       lipgloss.Style
+		hint         lipgloss.Style
 		hintSelected lipgloss.Style
+		command      lipgloss.Style
 	}{
-		header:      lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),
-		user:        lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(m.viewport.width - 2),
-		ai:          lipgloss.NewStyle().Width(m.viewport.width - 2),
-		error:       lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Width(m.viewport.width - 2),
-		loading:     lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
-		input:       lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).MarginBottom(1).Width(m.viewport.width - 2),
-		active:      lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("0")).Width(m.viewport.width - 2),
-		hint:        lipgloss.NewStyle().Background(lipgloss.Color("5")).Foreground(lipgloss.Color("0")).Width(m.viewport.width - 2),
-		hintSelected: lipgloss.NewStyle().Background(lipgloss.Color("4")).Foreground(lipgloss.Color("15")).Width(m.viewport.width - 2),
+		header:       lipgloss.NewStyle().Bold(true).Width(m.viewport.width - 2),
+		user:         lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(m.viewport.width - 2),
+		ai:           lipgloss.NewStyle().Width(m.viewport.width - 2),
+		error:        lipgloss.NewStyle().Foreground(lipgloss.Color("9")).Bold(true).Width(m.viewport.width - 2),
+		loading:      lipgloss.NewStyle().Foreground(lipgloss.Color("3")),
+		input:        lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("8")).MarginBottom(1).Width(m.viewport.width - 2),
+		active:       lipgloss.NewStyle().BorderStyle(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("0")).Width(m.viewport.width - 2),
+		hint:         lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Width(m.viewport.width - 2),
+		hintSelected: lipgloss.NewStyle().Foreground(lipgloss.Color("14")).Width(m.viewport.width - 2),
+		command:      lipgloss.NewStyle().Foreground(lipgloss.Color("8")).PaddingLeft(4).Width(m.viewport.width - 2),
 	}
 
 	// Build message history using StringBuilder for better performance
@@ -358,6 +386,9 @@ func (m model) View() string {
 	for _, msg := range m.messages {
 		if msg.IsUser {
 			conversation.WriteString(styles.user.Render("> " + msg.Content))
+		} else if msg.IsCommand {
+			// Don't apply any styling for command messages as they're already styled
+			conversation.WriteString(styles.command.Render(msg.Content))
 		} else {
 			// Check if this is an error message
 			if strings.HasPrefix(msg.Content, "Error:") {
@@ -380,7 +411,7 @@ func (m model) View() string {
 	// Render input prompt with cursor
 	var prompt string
 	prefix := "> "
-	
+
 	if m.loading {
 		prompt = styles.active.Render(prefix + m.input)
 	} else {
@@ -399,7 +430,7 @@ func (m model) View() string {
 			if m.cursorPosition+1 <= len(m.input) {
 				afterCursor = m.input[m.cursorPosition+1:]
 			}
-			
+
 			cursorStyle := lipgloss.NewStyle().Background(lipgloss.Color("7"))
 			prompt = styles.input.Render(prefix + beforeCursor + cursorStyle.Render(atCursor) + afterCursor)
 		}
@@ -410,7 +441,7 @@ func (m model) View() string {
 	if m.showHints && len(m.hints) > 0 {
 		var hintsBuilder strings.Builder
 		hintsBuilder.WriteString("\n")
-		
+
 		for i, hint := range m.hints {
 			if i == m.selectedHint {
 				// Highlight the selected hint
@@ -418,7 +449,7 @@ func (m model) View() string {
 			} else {
 				hintsBuilder.WriteString(styles.hint.Render(" " + hint + " "))
 			}
-			hintsBuilder.WriteString("\n")  // Add newline for vertical display
+			hintsBuilder.WriteString("\n") // Add newline for vertical display
 		}
 		hintsDisplay = hintsBuilder.String()
 	}
@@ -437,14 +468,14 @@ func getCommandHints(input string) []string {
 	if len(input) == 0 || input[0] != '/' {
 		return nil
 	}
-	
+
 	// Available commands
 	commands := []string{
 		"/clear",
 		"/help",
 		"/exit",
 	}
-	
+
 	// Find matching commands
 	var matches []string
 	for _, cmd := range commands {
@@ -452,14 +483,14 @@ func getCommandHints(input string) []string {
 			matches = append(matches, cmd)
 		}
 	}
-	
+
 	return matches
 }
 
 func main() {
 	// Clear screen and display logo first
 	utils.DisplayLogo()
-	
+
 	// Create initial model with default window size for proper text wrapping
 	initialModel := model{
 		messages:       []Message{},

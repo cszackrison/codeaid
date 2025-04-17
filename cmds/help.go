@@ -3,7 +3,6 @@ package cmds
 import (
 	"codeaid/messages"
 	tea "github.com/charmbracelet/bubbletea"
-	"strings"
 )
 
 // HelpCommand displays help information
@@ -22,17 +21,22 @@ func (c HelpCommand) Description() string {
 // Execute executes the command
 func (c HelpCommand) Execute(args string) tea.Cmd {
 	return func() tea.Msg {
-		var sb strings.Builder
-		sb.WriteString("Available commands:\n")
-
-		for _, cmd := range GetAllCommands() {
-			sb.WriteString(cmd.Name())
-			sb.WriteString(" - ")
-			sb.WriteString(cmd.Description())
-			sb.WriteString("\n")
+		// Collect all commands
+		allCommands := GetAllCommands()
+		cmdInfos := make([]messages.CommandInfo, 0, len(allCommands))
+		
+		for _, cmd := range allCommands {
+			cmdInfos = append(cmdInfos, messages.CommandInfo{
+				Name:        cmd.Name(),
+				Description: cmd.Description(),
+			})
 		}
-
-		return messages.ResponseMsg(sb.String())
+		
+		// Return a specialized help message that will be styled in main.go
+		return messages.HelpMsg{
+			Header:   "Available commands:",
+			Commands: cmdInfos,
+		}
 	}
 }
 
